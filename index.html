@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPL Bidding Game</title>
+<style>
+  :root {
+    --ink: #14181c;
+    --paper: #f6f3ea;
+    --line: #14181c;
+    --win: #1d9e75;
+    --lose: #d85a30;
+    --accent: #185fa5;
+    --muted: #6b6a64;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .app { max-width: 720px; margin: 0 auto; padding: 0 16px 64px; }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 0 16px; border-bottom: 3px solid var(--ink);
+    margin-bottom: 24px;
+  }
+  .brand {
+    font-size: 22px; font-weight: 800; letter-spacing: -0.5px;
+    text-transform: uppercase;
+  }
+  .brand span { color: var(--win); }
+  .whoami { font-size: 13px; text-align: right; color: var(--muted); }
+  .whoami b { color: var(--ink); }
+  .switchbtn {
+    background: none; border: 1px solid var(--ink); color: var(--ink);
+    font-size: 11px; padding: 4px 10px; cursor: pointer; margin-top: 4px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .switchbtn:hover { background: var(--ink); color: var(--paper); }
+
+  /* Login screen */
+  .login-wrap { text-align: center; padding: 48px 0; }
+  .login-wrap h1 {
+    font-size: 32px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: -1px; margin-bottom: 4px;
+  }
+  .login-wrap h1 span { color: var(--win); }
+  .login-wrap p { color: var(--muted); margin-bottom: 32px; font-size: 14px; }
+  .name-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+    max-width: 420px; margin: 0 auto;
+  }
+  .name-btn {
+    border: 2px solid var(--ink); background: white; padding: 14px 8px;
+    font-size: 15px; font-weight: 700; cursor: pointer; text-transform: uppercase;
+  }
+  .name-btn:hover { background: var(--ink); color: var(--paper); }
+  .admin-toggle {
+    margin-top: 32px; font-size: 12px; color: var(--muted); cursor: pointer;
+    text-decoration: underline;
+  }
+  .pin-wrap { max-width: 280px; margin: 0 auto; }
+  .pin-input {
+    width: 100%; font-size: 28px; text-align: center; letter-spacing: 8px;
+    padding: 14px; border: 2px solid var(--ink); margin-bottom: 12px; font-weight: 800;
+  }
+  .pin-input.error { border-color: var(--lose); }
+  .pin-submit {
+    width: 100%; padding: 12px; border: 2px solid var(--ink); background: var(--ink);
+    color: white; font-weight: 700; text-transform: uppercase; cursor: pointer; font-size: 14px;
+  }
+  .pin-error { color: var(--lose); font-size: 12px; margin-bottom: 10px; }
+  .pin-back { font-size: 12px; color: var(--muted); margin-top: 16px; cursor: pointer; text-decoration: underline; }
+
+  /* Nav tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--ink); }
+  .tab {
+    flex: 1; text-align: center; padding: 10px 0; cursor: pointer;
+    font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--muted); border-bottom: 3px solid transparent;
+  }
+  .tab.active { color: var(--ink); border-bottom-color: var(--win); }
+
+  /* Section header */
+  .section-label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); font-weight: 700; margin-bottom: 10px;
+  }
+
+  /* Match card */
+  .match-card {
+    border: 2px solid var(--ink); padding: 16px; margin-bottom: 16px; background: white;
+  }
+  .match-meta {
+    font-size: 11px; text-transform: uppercase; color: var(--muted);
+    letter-spacing: 0.5px; margin-bottom: 12px; display: flex; justify-content: space-between;
+  }
+  .teams-row { display: flex; align-items: center; gap: 12px; }
+  .team-btn {
+    flex: 1; border: 2px solid var(--ink); background: white; padding: 16px 8px;
+    font-size: 16px; font-weight: 800; cursor: pointer; text-transform: uppercase;
+    text-align: center; transition: none;
+  }
+  .team-btn:hover { background: #eee; }
+  .team-btn.selected { background: var(--win); color: white; border-color: var(--win); }
+  .team-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+  .vs { font-size: 13px; font-weight: 800; color: var(--muted); }
+  .lock-note { font-size: 11px; color: var(--muted); margin-top: 10px; }
+
+  /* Wildcards */
+  .wc-panel {
+    border: 2px solid var(--ink); background: white; padding: 14px; margin-bottom: 16px;
+  }
+  .wc-panel-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;
+    margin-bottom: 10px;
+  }
+  .wc-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid #ddd;
+  }
+  .wc-row:last-child { border-bottom: none; }
+  .wc-name { font-size: 13px; font-weight: 700; }
+  .wc-count { font-size: 11px; color: var(--muted); }
+  .wc-btn {
+    border: 1px solid var(--ink); background: white; font-size: 11px;
+    padding: 4px 10px; cursor: pointer; text-transform: uppercase; font-weight: 700;
+  }
+  .wc-btn:hover { background: var(--ink); color: white; }
+  .wc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .wc-active-tag {
+    font-size: 10px; background: var(--win); color: white; padding: 2px 6px;
+    text-transform: uppercase; font-weight: 700;
+  }
+  .fixture-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .fixture-form input, .fixture-form select {
+    font-size: 13px; padding: 8px; border: 1px solid var(--ink);
+  }
+  .fixture-form input[type="date"], .fixture-form input[type="time"] { flex: 0 0 140px; }
+  .fixture-form input[type="text"] { flex: 1 1 140px; }
+  .fixture-form select { flex: 0 0 100px; }
+  .fixture-add-btn {
+    border: 2px solid var(--ink); background: var(--ink); color: white; padding: 8px 16px;
+    font-weight: 700; text-transform: uppercase; cursor: pointer; font-size: 12px;
+  }
+  .fixture-form-error { color: var(--lose); font-size: 12px; margin-bottom: 8px; }
+  .steal-select {
+    font-size: 13px; padding: 6px 8px; border: 1px solid var(--ink); margin-right: 6px;
+  }
+
+  /* Confirm modal */
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .modal {
+    background: var(--paper); border: 3px solid var(--ink); padding: 28px;
+    max-width: 320px; text-align: center;
+  }
+  .modal p { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
+  .modal-row { display: flex; gap: 10px; }
+  .modal-row button {
+    flex: 1; padding: 10px; font-weight: 700; cursor: pointer; text-transform: uppercase;
+    font-size: 13px; border: 2px solid var(--ink);
+  }
+  .btn-confirm { background: var(--win); color: white; border-color: var(--win); }
+  .btn-cancel { background: white; color: var(--ink); }
+
+  /* Leaderboard */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--muted); padding: 8px 6px; border-bottom: 2px solid var(--ink);
+  }
+  td { padding: 10px 6px; border-bottom: 1px solid #ddd; }
+  tr.me { background: #eef6f1; }
+  tr.forfeited { opacity: 0.5; }
+  tr.forfeited td { color: var(--muted) !important; }
+  .forfeit-tag {
+    font-size: 10px; background: var(--muted); color: white; padding: 2px 6px;
+    text-transform: uppercase; font-weight: 700;
+  }
+  .rank-cell { font-weight: 800; width: 28px; }
+  .pts { font-weight: 800; font-size: 15px; }
+  .pts.pos { color: var(--win); }
+  .pts.neg { color: var(--lose); }
+  .bid-pill {
+    display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px;
+    border: 1px solid var(--ink);
+  }
+  .no-bid { color: var(--muted); font-size: 12px; font-style: italic; }
+
+  /* Admin */
+  .admin-banner {
+    background: var(--ink); color: var(--paper); padding: 8px 14px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 20px; font-weight: 700;
+  }
+  .result-btn {
+    width: 100%; text-align: left; border: 1px solid var(--ink); background: white;
+    padding: 10px 14px; margin-bottom: 8px; cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .result-btn.chosen { background: var(--win); color: white; border-color: var(--win); }
+  .done-tag { font-size: 11px; color: var(--win); font-weight: 700; text-transform: uppercase; }
+
+  .empty-state { text-align: center; padding: 40px 0; color: var(--muted); font-size: 14px; }
+  .footnote { font-size: 11px; color: var(--muted); margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" class="app"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
