@@ -1,6 +1,6 @@
 
-const PLAYERS = ["Padmavathi","Aravind","Sruthi","Karthik","Divya","Naveen","Pranav","Meghana","Sai","Lakshmi"];
-const ADMINS = ["Padmavathi","Aravind"];
+const PLAYERS = ["Padmavathi","Naveen","Sruthi Palepu","Bhayya","Eshwar Chand","Pavan Palepu","Raja","Meghana","Shruthi Raja","Sridhar","Rajdeep"];
+const ADMINS = ["Eshwar Chand","Rajdeep"];
 
 function todayISO() {
   const d = new Date();
