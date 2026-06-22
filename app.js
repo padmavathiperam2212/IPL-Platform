@@ -28,7 +28,11 @@ let state = {
   bidChangeMode: null,
   pendingLoginName: null,
   pinError: null,
-  fixtureFormError: null
+  fixtureFormError: null,
+  pdfImportState: null, // null | 'parsing' | 'preview' | 'importing' | 'done' | 'error'
+  pdfImportPreview: null, // array of parsed fixtures pending confirmation
+  pdfImportError: null,
+  pdfImportStage: 'league' // which stage to assign to imported fixtures
 };
 
 // "Today's matches" is always derived from the full fixture list by filtering on today's date --
@@ -589,8 +593,14 @@ function leaderboardView() {
 }
 
 function adminView() {
+  const pdfSection = buildPdfImportSection();
   return `
-    <div class="admin-banner">Admin &mdash; add a fixture</div>
+    <div class="admin-banner">Admin &mdash; import fixtures from PDF</div>
+    <div class="match-card pdf-import-section">
+      ${pdfSection}
+    </div>
+
+    <div class="admin-banner" style="margin-top:16px;">Or add a fixture manually</div>
     <div class="match-card">
       ${state.fixtureFormError ? `<div class="fixture-form-error">${state.fixtureFormError}</div>` : ''}
       <div class="fixture-form">
@@ -605,10 +615,10 @@ function adminView() {
         </select>
       </div>
       <button class="fixture-add-btn" id="addFixtureBtn">Add fixture</button>
-      <div class="lock-note" style="margin-top:8px;">Enter the season's schedule once, upfront. The bidding page only shows matches dated today.</div>
+      <div class="lock-note" style="margin-top:8px;">The bidding page only shows matches dated today.</div>
     </div>
 
-    <div class="admin-banner" style="margin-top:24px;">Enter match results</div>
+    <div class="admin-banner" style="margin-top:16px;">Enter match results</div>
     ${state.fixtures.slice().sort((a,b) => a.date.localeCompare(b.date)).map(m => `
       <div class="match-card">
         <div class="match-meta">
@@ -621,7 +631,7 @@ function adminView() {
       </div>
     `).join('')}
 
-    <div class="admin-banner" style="margin-top:24px;">Reset a forgotten PIN</div>
+    <div class="admin-banner" style="margin-top:16px;">Reset a forgotten PIN</div>
     <div class="match-card">
       <div class="lock-note" style="margin-bottom:10px;">Resetting clears that player's PIN so they can set a new one next time they log in. You cannot view existing PINs.</div>
       ${PLAYERS.map(p => `
@@ -632,6 +642,76 @@ function adminView() {
       `).join('')}
     </div>
   `;
+}
+
+function buildPdfImportSection() {
+  if (!state.pdfImportState) {
+    return `
+      <div class="lock-note" style="margin-bottom:12px;">
+        Upload an official IPL schedule PDF. The app uses AI to extract matches regardless of PDF layout or formatting changes between seasons — no manual re-configuration needed.
+      </div>
+      <label class="pdf-upload-label">
+        📄 Upload schedule PDF
+        <input type="file" id="pdfUploadInput" class="pdf-upload-input" accept=".pdf" />
+      </label>
+      <select class="pdf-stage-select" id="pdfStageSelect">
+        <option value="league">League stage</option>
+        <option value="playoff">Playoffs</option>
+        <option value="final">Final</option>
+      </select>
+    `;
+  }
+
+  if (state.pdfImportState === 'parsing') {
+    return `<div class="pdf-status">⏳ Reading PDF and extracting fixtures... this may take 10-20 seconds.</div>`;
+  }
+
+  if (state.pdfImportState === 'error') {
+    return `
+      <div class="fixture-form-error">Error: ${state.pdfImportError}</div>
+      <button class="pdf-cancel-btn" id="pdfResetBtn">Try again</button>
+    `;
+  }
+
+  if (state.pdfImportState === 'importing') {
+    return `<div class="pdf-status">⏳ Saving ${state.pdfImportPreview.length} fixtures to the database...</div>`;
+  }
+
+  if (state.pdfImportState === 'done') {
+    return `
+      <div class="pdf-status" style="color:var(--win);">✓ ${state.pdfImportPreview.length} fixtures imported successfully.</div>
+      <button class="pdf-cancel-btn" id="pdfResetBtn">Import another PDF</button>
+    `;
+  }
+
+  if (state.pdfImportState === 'preview') {
+    const fixtures = state.pdfImportPreview;
+    return `
+      <div class="lock-note" style="margin-bottom:8px;">
+        <b>${fixtures.length} matches found.</b> Review below — check that teams, dates and times look correct before importing.
+        Importing will ADD these fixtures to the existing schedule (it will not delete or overwrite existing fixtures).
+      </div>
+      <table class="pdf-preview-table">
+        <thead><tr><th>#</th><th>Date</th><th>Time</th><th>Team A</th><th>Team B</th><th>Stage</th></tr></thead>
+        <tbody>
+          ${fixtures.map(f => `
+            <tr>
+              <td>${f.matchNo}</td>
+              <td>${f.date}</td>
+              <td>${f.scheduledTime}</td>
+              <td>${f.teamA}</td>
+              <td>${f.teamB}</td>
+              <td>${f.stage}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <button class="pdf-import-btn" id="pdfConfirmBtn">Import ${fixtures.length} fixtures</button>
+      <button class="pdf-cancel-btn" id="pdfResetBtn">Cancel</button>
+    `;
+  }
+
+  return '';
 }
 
 function confirmModal() {
@@ -779,6 +859,57 @@ function attachMainEvents() {
     });
   });
 
+  // PDF import handlers
+  const pdfInput = document.getElementById('pdfUploadInput');
+  if (pdfInput) {
+    pdfInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const stage = document.getElementById('pdfStageSelect')?.value || 'league';
+      state.pdfImportStage = stage;
+      state.pdfImportState = 'parsing';
+      state.pdfImportError = null;
+      render();
+      await parsePdfWithClaude(file, stage);
+    });
+  }
+
+  const pdfConfirmBtn = document.getElementById('pdfConfirmBtn');
+  if (pdfConfirmBtn) {
+    pdfConfirmBtn.addEventListener('click', async () => {
+      state.pdfImportState = 'importing';
+      render();
+      try {
+        for (const f of state.pdfImportPreview) {
+          await sbFetch("fixtures?on_conflict=id", {
+            method: "POST",
+            headers: { "Prefer": "resolution=merge-duplicates" },
+            body: JSON.stringify({
+              id: f.id, date: f.date, scheduled_time: f.scheduledTime,
+              team_a: f.teamA, team_b: f.teamB, stage: f.stage, result: null
+            })
+          });
+        }
+        await loadMatches();
+        state.pdfImportState = 'done';
+      } catch (err) {
+        state.pdfImportState = 'error';
+        state.pdfImportError = err.message;
+      }
+      render();
+    });
+  }
+
+  const pdfResetBtn = document.getElementById('pdfResetBtn');
+  if (pdfResetBtn) {
+    pdfResetBtn.addEventListener('click', () => {
+      state.pdfImportState = null;
+      state.pdfImportPreview = null;
+      state.pdfImportError = null;
+      render();
+    });
+  }
+
   document.querySelectorAll('[data-action="resetpin"]').forEach(btn => {
     btn.addEventListener('click', () => {
       const player = btn.dataset.player;
@@ -828,6 +959,86 @@ function attachMainEvents() {
   const no = document.getElementById('confirmNo');
   if (yes) yes.addEventListener('click', () => state.confirmAction.run());
   if (no) no.addEventListener('click', () => { state.confirmAction = null; render(); });
+}
+
+async function parsePdfWithClaude(file, stage) {
+  try {
+    // Read the PDF as base64 -- Claude's API accepts PDF documents natively and reads
+    // both the text layer and visual layout, making it robust against PDF formatting changes
+    // between seasons (e.g., different column orders, design changes, new sponsors on page, etc.)
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('Failed to read PDF file'));
+      reader.readAsDataURL(file);
+    });
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf", data: base64Data }
+            },
+            {
+              type: "text",
+              text: `Extract all cricket match fixtures from this IPL schedule PDF.
+
+Return ONLY a valid JSON array — no explanation, no markdown, no code blocks, nothing else.
+Each element must have exactly these fields:
+- matchNo: integer (the match number from the schedule)
+- date: string in YYYY-MM-DD format (e.g. 28-MAR-26 becomes 2026-03-28)
+- scheduledTime: string in 24h HH:MM format (7:30 PM becomes 19:30, 3:30 PM becomes 15:30)
+- teamA: string — the HOME team exactly as written in the schedule
+- teamB: string — the AWAY team exactly as written in the schedule
+- stage: "${stage}"
+
+Important: The Home column is the team listed under "Home" in the schedule table. The Away column is the team listed under "Away". Do not swap them.
+
+Include every match from all pages. Return only the JSON array, starting with [ and ending with ].`
+            }
+          ]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`API error ${response.status}: ${err}`);
+    }
+
+    const data = await response.json();
+    const rawText = data.content[0].text.trim();
+
+    // Strip any accidental markdown code fences if Claude added them despite instructions
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const fixtures = JSON.parse(cleaned);
+
+    if (!Array.isArray(fixtures) || fixtures.length === 0) {
+      throw new Error('No fixtures found in the PDF. Make sure this is an IPL schedule document.');
+    }
+
+    // Assign unique IDs based on match number + stage to avoid collision with manually added fixtures
+    // and to make re-imports idempotent (same matchNo + stage = same ID = upsert, not duplicate)
+    const withIds = fixtures.map(f => ({
+      ...f,
+      id: `pdf_${stage}_m${f.matchNo}`,
+      result: null
+    }));
+
+    state.pdfImportPreview = withIds;
+    state.pdfImportState = 'preview';
+  } catch (err) {
+    state.pdfImportState = 'error';
+    state.pdfImportError = err.message || 'Unknown error during PDF parsing.';
+  }
+  render();
 }
 
 async function init() {
