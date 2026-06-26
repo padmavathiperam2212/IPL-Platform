@@ -963,80 +963,37 @@ function attachMainEvents() {
 
 async function parsePdfWithClaude(file, stage) {
   try {
-    // Read the PDF as base64 -- Claude's API accepts PDF documents natively and reads
-    // both the text layer and visual layout, making it robust against PDF formatting changes
-    // between seasons (e.g., different column orders, design changes, new sponsors on page, etc.)
+    // Read the PDF as base64
     const base64Data = await new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = () => reject(new Error('Failed to read PDF file'));
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = () => reject(new Error("Failed to read PDF file"));
       reader.readAsDataURL(file);
     });
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // Call the Vercel serverless proxy (avoids CORS — browser cannot call Gemini/Anthropic directly)
+    const response = await fetch("/api/parse-pdf", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 8000,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: base64Data }
-            },
-            {
-              type: "text",
-              text: `Extract all cricket match fixtures from this IPL schedule PDF.
-
-Return ONLY a valid JSON array — no explanation, no markdown, no code blocks, nothing else.
-Each element must have exactly these fields:
-- matchNo: integer (the match number from the schedule)
-- date: string in YYYY-MM-DD format (e.g. 28-MAR-26 becomes 2026-03-28)
-- scheduledTime: string in 24h HH:MM format (7:30 PM becomes 19:30, 3:30 PM becomes 15:30)
-- teamA: string — the HOME team exactly as written in the schedule
-- teamB: string — the AWAY team exactly as written in the schedule
-- stage: "${stage}"
-
-Important: The Home column is the team listed under "Home" in the schedule table. The Away column is the team listed under "Away". Do not swap them.
-
-Include every match from all pages. Return only the JSON array, starting with [ and ending with ].`
-            }
-          ]
-        }]
-      })
+      body: JSON.stringify({ pdfBase64: base64Data, stage })
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`API error ${response.status}: ${err}`);
+      const err = await response.json().catch(() => ({ error: "Unknown server error" }));
+      throw new Error(err.error || `Server error: ${response.status}`);
     }
 
-    const data = await response.json();
-    const rawText = data.content[0].text.trim();
-
-    // Strip any accidental markdown code fences if Claude added them despite instructions
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-    const fixtures = JSON.parse(cleaned);
-
+    const { fixtures, error } = await response.json();
+    if (error) throw new Error(error);
     if (!Array.isArray(fixtures) || fixtures.length === 0) {
-      throw new Error('No fixtures found in the PDF. Make sure this is an IPL schedule document.');
+      throw new Error("No fixtures found in the PDF. Make sure this is an IPL schedule document.");
     }
 
-    // Assign unique IDs based on match number + stage to avoid collision with manually added fixtures
-    // and to make re-imports idempotent (same matchNo + stage = same ID = upsert, not duplicate)
-    const withIds = fixtures.map(f => ({
-      ...f,
-      id: `pdf_${stage}_m${f.matchNo}`,
-      result: null
-    }));
-
-    state.pdfImportPreview = withIds;
-    state.pdfImportState = 'preview';
+    state.pdfImportPreview = fixtures;
+    state.pdfImportState = "preview";
   } catch (err) {
-    state.pdfImportState = 'error';
-    state.pdfImportError = err.message || 'Unknown error during PDF parsing.';
+    state.pdfImportState = "error";
+    state.pdfImportError = err.message || "Unknown error during PDF parsing.";
   }
   render();
 }
@@ -1051,3 +1008,4 @@ async function init() {
 }
 
 init();
+
